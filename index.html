@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>QCM - IHEC Carthage</title>
 <script>
 // ===================== RÉGLAGES (durée, code, matière... se gèrent dans la page admin) =====================
 const CLIENT_ID = '848023216896-75ihlcrd96mstsctp7anv80ucm2ulqem.apps.googleusercontent.com';
-const EXAMEN = (new URLSearchParams(location.search).get('examen') || '').trim();   // identifiant de l'examen, lu dans l'adresse : ...?examen=gestion-projet
-const API_URL   = 'https://script.google.com/macros/s/AKfycbyb9NxssT5zgkhhelwFF6olSeq7LpnKuGiu3t3wC2NjHxV5Ergpws65oxiMmxA6g9r-/exec';   // URL du nouveau déploiement (se termine par /exec)
+const CLE = (new URLSearchParams(location.search).get('k') || '').trim();   // clé secrète de l'examen, lue dans le lien donné par l'enseignant : ...?k=...
+const API_URL   = 'https://script.google.com/macros/s/AKfycbxwTVLrBj-5dfu722S1ApsgGuVIT8I4QlIs6V5sOzqtICZDXrWk7Pyu3HzwJ1oBqtg59g/exec';   // URL du nouveau déploiement (se termine par /exec)
 // =================================================================================
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -71,7 +72,7 @@ ul.regles li{margin:6px 0}
 @media (max-width:520px){.entete table{font-size:12px}.entete td{padding:4px 5px}}
 </style>
 </head>
-<body>
+<body style="visibility:hidden">
 <div id="bandeDemo" class="demo cache">Mode démonstration : 6 questions d'essai, rien n'est enregistré</div>
 <header>
   <h1 id="titreH1">QCM - IHEC Carthage</h1>
@@ -182,7 +183,7 @@ function applyConfig(c){
   if(!cfg.ouvert) $('errConnexion').textContent = "Cet examen n'est pas ouvert pour le moment.";
 }
 const configure = !/COLLER_ICI/.test(CLIENT_ID) && !/COLLER_ICI/.test(API_URL);
-const DEMO = !configure || new URLSearchParams(location.search).has('demo');
+const DEMO = !configure;   // mode démonstration uniquement tant que la page n'est pas configurée
 
 let jeton = null, etat = null;   // etat = données du test en cours
 let enCours = false, envoiEnCours = false, dernierSortie = 0, copies = 0, pleinEcranActif = false;
@@ -243,7 +244,7 @@ $('formIdentite').addEventListener('submit', async ev => {
   const btn = $('btnCommencer'); btn.disabled = true; btn.textContent = 'Chargement...';
   entrerPleinEcran();   // dans le geste de clic, sinon le navigateur refuse
   try{
-    const rep = await api({action:'start', examen:EXAMEN, jeton:jeton, nom:$('nom').value, prenom:$('prenom').value, cin:$('cin').value, code:$('code').value});
+    const rep = await api({action:'start', cle:CLE, jeton:jeton, nom:$('nom').value, prenom:$('prenom').value, cin:$('cin').value, code:$('code').value});
     if(!rep.ok) throw new Error(rep.erreur || 'Erreur inconnue.');
     lancer(rep);
   }catch(e){
@@ -395,13 +396,16 @@ document.addEventListener('keydown', e => {
 });
 window.addEventListener('beforeunload', e => { if(enCours){ e.preventDefault(); e.returnValue = ''; } });
 
-initGoogle(0);
-if(DEMO){ applyConfig({}); }
-else if(!EXAMEN){ $('errConnexion').textContent = "Adresse incomplète : utilisez le lien exact donné par votre enseignant (il se termine par ?examen=...)."; }
-else api({action:'config', examen:EXAMEN}).then(r => {
-  if(!r.ok) throw new Error(r.erreur || 'Examen introuvable.');
-  applyConfig(r.config);
-}).catch(e => { $('errConnexion').textContent = "Impossible de charger l'examen : " + e.message; });
+function fermer(msg){
+  document.body.textContent = msg;
+  document.body.style.cssText = 'visibility:visible;font-family:Arial,sans-serif;padding:64px 24px;color:#6B7A90;text-align:center;font-size:16px';
+}
+if(DEMO){ applyConfig({}); document.body.style.visibility = 'visible'; initGoogle(0); }
+else if(!CLE){ fermer('Page indisponible.'); }
+else api({action:'config', cle:CLE}).then(r => {
+  if(!r.ok) throw new Error('lien');
+  applyConfig(r.config); document.body.style.visibility = 'visible'; initGoogle(0);
+}).catch(e => { fermer(/injoignable|Failed|fetch/i.test(String(e && e.message)) ? "Impossible de joindre le serveur. Réessayez dans un instant." : 'Lien invalide ou examen indisponible.'); });
 })();
 </script>
 </body>
