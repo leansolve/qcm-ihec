@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Administration des QCM - IHEC Carthage</title>
+<script>
+// ===================== RÉGLAGES =====================
+const CLIENT_ID = '848023216896-75ihlcrd96mstsctp7anv80ucm2ulqem.apps.googleusercontent.com';
+const API_URL   = 'COLLER_ICI_URL_APPS_SCRIPT';   // même URL /exec que dans les pages index
+// Adresse de la page étudiants (dépôt GitHub unique pour toutes les matières). Le lien d'un examen = cette adresse + ?k=clé secrète (générée par le serveur, jamais l'identifiant de l'examen)
+const URL_ETUDIANTS = 'https://leansolve.github.io/qcm-ihec/';
+// =====================================================
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bleu:#1F3A5F;--teal:#1B7F8C;--orange:#D9731A;--rouge:#B03A48;--vert:#2E8B57;--fond:#F3F6F9;--carte:#fff;--texte:#1B2A41;--gris:#6B7A90;--bord:#D5DEE8}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--fond);color:var(--texte);font-size:16px;line-height:1.45}
+header{background:var(--bleu);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;font-weight:600;flex:1;min-width:200px}
+header .qui{font-size:13px;opacity:.85}
+main{max-width:1000px;margin:0 auto;padding:18px 16px 80px}
+.carte{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:18px;margin-bottom:16px}
+h2{margin:0 0 10px;font-size:20px;color:var(--bleu)}
+h3{margin:0 0 8px;font-size:16px;color:var(--bleu)}
+label{display:block;font-weight:600;margin:10px 0 3px;font-size:14px}
+input[type=text],input[type=number],select,textarea{width:100%;padding:8px 10px;border:1px solid var(--bord);border-radius:8px;background:#fff;color:var(--texte);font:inherit}
+textarea{resize:vertical;min-height:54px}
+input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--teal);outline-offset:1px}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--bord);background:#fff;color:var(--texte);padding:8px 14px}
+button.p{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600}
+button.d{background:#fff;border-color:var(--rouge);color:var(--rouge)}
+button.o{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+.grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 14px}
+.ligne{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.muted{color:var(--gris);font-size:14px}
+.ok{color:var(--vert);font-weight:600}.ko{color:var(--rouge);font-weight:600}
+.onglets{display:flex;gap:6px;margin:14px 0 0;flex-wrap:wrap}
+.onglets button{border-radius:8px 8px 0 0;border-bottom:none}
+.onglets button.actif{background:var(--bleu);color:#fff;border-color:var(--bleu)}
+.cache{display:none!important}
+.q{border:1px solid var(--bord);border-radius:10px;padding:12px;margin:10px 0;background:#fff}
+.q.invalide{border-color:var(--rouge);background:#FFF5F6}
+.q .tete{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;font-weight:600;color:var(--bleu)}
+.q .opt{display:flex;gap:8px;align-items:center;margin:5px 0}
+.q .opt b{width:22px;flex:none;text-align:center}
+.q .opt input[type=radio]{flex:none;width:18px;height:18px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{border-bottom:1px solid var(--bord);padding:6px 8px;text-align:left}
+th{background:#EAF0F6;position:sticky;top:0}
+.defile{overflow:auto;max-height:520px;border:1px solid var(--bord);border-radius:8px}
+.msg{padding:10px 12px;border-radius:8px;margin:10px 0;font-weight:600}
+.msg.ok{background:#E8F5EE}.msg.ko{background:#FBE9EC}
+.barre{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--bord);padding:10px 16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;z-index:4}
+</style>
+</head>
+<body>
+<header>
+  <h1>Administration des QCM - IHEC Carthage</h1>
+  <span class="qui" id="qui"></span>
+  <button type="button" id="btnQuitter" class="cache">Se déconnecter</button>
+</header>
+<main>
+  <section id="eConnexion" class="carte">
+    <h2>Connexion administrateur</h2>
+    <p>Connectez-vous avec le compte Gmail autorisé (liste dans l'onglet « Admins » du Google Sheet).</p>
+    <div id="boutonGoogle"></div>
+    <p class="ko" id="errConnexion"></p>
+  </section>
+
+  <section id="eAdmin" class="cache">
+    <div class="carte">
+      <div class="ligne">
+        <label for="selExamen" style="margin:0">Examen :</label>
+        <select id="selExamen" style="max-width:420px"></select>
+        <button type="button" id="btnNouveau">+ Nouvel examen</button>
+        <span id="lienEtudiants" class="muted"></span>
+      </div>
+      <div id="resume" class="muted"></div>
+      <div class="onglets">
+        <button type="button" data-o="reglages" class="actif">Réglages</button>
+        <button type="button" data-o="questions">Questions (QCM)</button>
+        <button type="button" data-o="resultats">Résultats</button>
+        <button type="button" data-o="historique">Historique</button>
+      </div>
+    </div>
+    <div id="msg"></div>
+
+    <!-- Réglages -->
+    <div id="oReglages" class="carte">
+      <h2>Réglages de l'examen</h2>
+      <div class="grille">
+        <div><label for="fId">Identifiant (non modifiable)</label><input type="text" id="fId" maxlength="40"></div>
+        <div><label for="fIntitule">Intitulé (ex. DS 1 - Novembre 2026)</label><input type="text" id="fIntitule"></div>
+        <div><label for="fFiliere">Filière / classe</label><input type="text" id="fFiliere"></div>
+        <div><label for="fMatiere">Matière</label><input type="text" id="fMatiere"></div>
+        <div><label for="fEns">Enseignant</label><input type="text" id="fEns"></div>
+        <div><label for="fDate">Date (affichée dans l'en-tête)</label><input type="text" id="fDate" placeholder="jj/mm/aaaa"></div>
+        <div><label for="fDuree">Durée (minutes)</label><input type="number" id="fDuree" min="1" max="600"></div>
+        <div><label for="fNb">Questions tirées au sort (0 = toutes)</label><input type="number" id="fNb" min="0"></div>
+        <div><label for="fCode">Code d'examen (vide = pas de code)</label><input type="text" id="fCode" maxlength="30"></div>
+        <div><label for="fSorties">Sorties de fenêtre autorisées</label><input type="number" id="fSorties" min="1" max="20"></div>
+      </div>
+      <div class="ligne">
+        <label style="margin:0;font-weight:400"><input type="checkbox" id="fOuvert"> Examen ouvert (les étudiants peuvent commencer)</label>
+      </div>
+      <div class="ligne">
+        <label style="margin:0;font-weight:400"><input type="checkbox" id="fNote"> Afficher la note à l'étudiant à la fin</label>
+      </div>
+      <div class="ligne"><button type="button" class="p" id="btnSaveExam">Enregistrer les réglages</button>
+        <button type="button" class="d" id="btnDelExam">Supprimer cet examen</button></div>
+      <p class="muted">Un changement de durée ou de code s'applique aux étudiants qui commencent après l'enregistrement ; ceux déjà en cours gardent leur temps.</p>
+    </div>
+
+    <!-- Questions -->
+    <div id="oQuestions" class="cache">
+      <div class="carte">
+        <h2>Importer depuis Excel</h2>
+        <p class="muted">Fichier .xlsx avec les colonnes : <b>Question | A | B | C | D | Bonne réponse</b> (la bonne réponse est une lettre A, B, C ou D).</p>
+        <div class="ligne">
+          <input type="file" id="fichier" accept=".xlsx,.xls,.csv">
+          <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="replace" checked> Remplacer toutes les questions</label>
+          <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="append"> Ajouter à la suite</label>
+        </div>
+        <div class="ligne"><button type="button" id="btnModele">Télécharger le modèle Excel</button>
+          <button type="button" id="btnExport">Exporter les questions actuelles (Excel)</button></div>
+        <div id="apercu"></div>
+      </div>
+      <div class="carte">
+        <div class="ligne" style="justify-content:space-between">
+          <h2 style="margin:0">Questions de l'examen <span class="muted" id="compteQ"></span></h2>
+          <div class="ligne" style="margin:0"><input type="text" id="recherche" placeholder="Rechercher..." style="width:200px"><button type="button" class="p" id="btnAjoutQ">+ Ajouter une question</button></div>
+        </div>
+        <p class="muted">Modifiez directement ci-dessous, puis cliquez sur « Enregistrer les modifications ». Évitez de modifier les questions pendant qu'un examen est en cours.</p>
+        <div id="listeQ"></div>
+      </div>
+      <div class="barre"><span id="etatQ" class="muted"></span><button type="button" class="o" id="btnSaveQ" disabled>Enregistrer les modifications</button></div>
+    </div>
+
+    <!-- Résultats -->
+    <div id="oResultats" class="cache carte">
+      <div class="ligne" style="justify-content:space-between"><h2 style="margin:0">Résultats</h2>
+        <div class="ligne" style="margin:0"><button type="button" id="btnRaffraichir">Actualiser</button><button type="button" id="btnExportRes">Exporter (Excel)</button></div></div>
+      <div id="statsRes" class="muted"></div>
+      <div class="defile"><table><thead><tr><th>Nom</th><th>Prénom</th><th>CIN</th><th>Email</th><th>Statut</th><th>Score</th><th>Note /20</th><th>Sorties</th><th>Copier-coller</th><th>Motif</th><th>Remise</th><th></th></tr></thead><tbody id="corpsRes"></tbody></table></div>
+      <p class="muted">« Réinitialiser » supprime la copie d'un étudiant (par exemple après un incident technique) pour qu'il puisse recommencer.</p>
+    </div>
+    <!-- Historique -->
+    <div id="oHistorique" class="cache carte">
+      <div class="ligne" style="justify-content:space-between"><h2 style="margin:0">Historique des examens</h2>
+        <div class="ligne" style="margin:0"><label style="margin:0"><input type="checkbox" id="histTous" checked> Toutes les matières</label><button type="button" id="btnHist">Actualiser</button></div></div>
+      <p class="muted">Avant chaque modification, import ou suppression, l'état de l'examen (réglages et questions) est conservé ici. Vous pouvez le télécharger en Excel ou le restaurer. Les copies des étudiants ne sont jamais effacées par une restauration.</p>
+      <div class="defile"><table><thead><tr><th>Matière</th><th>Examen</th><th>Date</th><th>Auteur</th><th>Événement</th><th>Questions</th><th></th></tr></thead><tbody id="corpsHist"></tbody></table></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const LETTRES = ['A','B','C','D'];
+let jeton = null, exams = [], courant = null, qs = [], sale = false, copies = [];
+
+// ---------- API ----------
+async function api(req){
+  if(/COLLER_ICI/.test(API_URL)) throw new Error("API_URL n'est pas renseignée dans admin.html.");
+  req.jeton = jeton;
+  const r = await fetch(API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(req)});
+  if(!r.ok) throw new Error('Serveur injoignable ('+r.status+').');
+  const j = await r.json();
+  if(!j.ok) throw new Error(j.erreur || 'Erreur.');
+  return j;
+}
+function message(txt, ok){ const m = $('msg'); m.textContent = ''; if(!txt) return;
+  const d = document.createElement('div'); d.className = 'msg ' + (ok ? 'ok' : 'ko'); d.textContent = txt; m.appendChild(d);
+  if(ok) setTimeout(() => { if(m.firstChild === d) m.textContent = ''; }, 6000); window.scrollTo({top:0, behavior:'smooth'}); }
+async function tenter(f){ try{ await f(); }catch(e){ message(e.message, false); } }
+
+// ---------- Connexion ----------
+function initGoogle(n){
+  if(!(window.google && google.accounts && google.accounts.id)){
+    if(n > 40){ $('errConnexion').textContent = 'Le bouton Google ne se charge pas. Rechargez la page.'; return; }
+    return setTimeout(() => initGoogle(n+1), 250); }
+  google.accounts.id.initialize({client_id:CLIENT_ID, callback: async rep => {
+    jeton = rep.credential; $('errConnexion').textContent = '';
+    try{ const r = await api({action:'admin_info'}); $('qui').textContent = r.email;
+      $('eConnexion').classList.add('cache'); $('eAdmin').classList.remove('cache'); $('btnQuitter').classList.remove('cache');
+      exams = r.examens; remplirSelect(); if(exams.length) await choisir(exams[0].examen); else nouvelExamen();
+    }catch(e){ $('errConnexion').textContent = e.message; jeton = null; } }});
+  google.accounts.id.renderButton($('boutonGoogle'), {theme:'filled_blue', size:'large', text:'signin_with', locale:'fr'});
+}
+$('btnQuitter').onclick = () => location.reload();
+
+// ---------- Liste des examens ----------
+function remplirSelect(choix){
+  const s = $('selExamen'); s.textContent = '';
+  exams.forEach(e => { const o = document.createElement('option'); o.value = e.examen;
+    o.textContent = (e.filiere ? e.filiere + ' - ' : '') + (e.matiere || e.examen) + '  [' + e.examen + ']'; s.appendChild(o); });
+  if(choix) s.value = choix;
+}
+$('selExamen').onchange = () => confirmerPerte() && tenter(() => choisir($('selExamen').value));
+function confirmerPerte(){ if(sale && !confirm('Des modifications de questions ne sont pas enregistrées. Les abandonner ?')){ $('selExamen').value = courant; return false; } return true; }
+
+async function choisir(id){
+  const r = await api({action:'admin_get', examen:id});
+  courant = id; $('selExamen').value = id; remplirForm(r.examen);
+  qs = r.questions.map(q => ({question:q.question, options:q.options.slice(), bonne:q.bonne})); sale = false; dessinerQ(); majEtatQ();
+  const e = exams.find(x => x.examen === id) || {};
+  $('resume').textContent = (e.nb_valides !== undefined ? e.nb_valides + ' question(s) valide(s) sur ' + e.nb_total + ' - ' : '') + (e.nb_termines || 0) + ' copie(s) remise(s) sur ' + (e.nb_copies || 0) + ' commencée(s)';
+  afficherLien(id, r.examen.cle);
+  $('fId').readOnly = true; copies = []; $('corpsRes').textContent = ''; $('statsRes').textContent = '';
+}
+
+function afficherLien(id, cle){
+  const z = $('lienEtudiants'); z.textContent = '';
+  if(!URL_ETUDIANTS || !cle) return;
+  const url = URL_ETUDIANTS + '?k=' + encodeURIComponent(cle);
+  const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Ouvrir la page étudiants';
+  const bc = document.createElement('button'); bc.type = 'button'; bc.textContent = 'Copier le lien';
+  bc.onclick = async () => { try{ await navigator.clipboard.writeText(url); message('Lien étudiants copié.', true); }catch(e){ prompt('Copiez ce lien :', url); } };
+  const br = document.createElement('button'); br.type = 'button'; br.textContent = 'Régénérer le lien';
+  br.onclick = () => tenter(async () => {
+    if(!confirm('Un nouveau lien secret sera créé pour « ' + id + ' ». L\'ancien lien cessera de fonctionner immédiatement. Continuer ?')) return;
+    const r2 = await api({action:'admin_regen_key', examen:id}); await rechargerListe(); afficherLien(id, r2.cle); message('Nouveau lien créé : l\'ancien ne fonctionne plus.', true); });
+  z.append(a, ' ', bc, ' ', br);
+}
+async function rechargerListe(){ const r = await api({action:'admin_info'}); exams = r.examens; remplirSelect(courant); }
+
+// ---------- Réglages ----------
+function remplirForm(e){
+  $('fId').value = e.examen || ''; $('fIntitule').value = e.intitule || ''; $('fFiliere').value = e.filiere || ''; $('fMatiere').value = e.matiere || '';
+  $('fEns').value = e.enseignant || ''; $('fDate').value = e.date || ''; $('fDuree').value = e.duree_min || 45; $('fNb').value = e.nb_questions || 0;
+  $('fCode').value = e.code || ''; $('fSorties').value = e.max_sorties || 3; $('fOuvert').checked = !!e.ouvert; $('fNote').checked = !!e.afficher_note;
+}
+function lireForm(){
+  return {examen:$('fId').value.trim(), intitule:$('fIntitule').value.trim(), filiere:$('fFiliere').value.trim(), matiere:$('fMatiere').value.trim(),
+    enseignant:$('fEns').value.trim(), date:$('fDate').value.trim(), duree_min:Number($('fDuree').value), nb_questions:Number($('fNb').value) || 0,
+    code:$('fCode').value.trim(), max_sorties:Number($('fSorties').value), ouvert:$('fOuvert').checked, afficher_note:$('fNote').checked};
+}
+$('btnSaveExam').onclick = () => tenter(async () => {
+  const e = lireForm();
+  if(!courant && exams.some(x => x.examen === e.examen)){ message('Cet identifiant existe déjà : choisissez-en un autre pour ne pas écraser l\'examen existant.', false); return; }
+  const r = await api({action:'admin_save_exam', examen:e, creation:!courant});
+  await rechargerListe(); if(r.cree){ await choisir(e.examen); }
+  message('Réglages enregistrés.', true);
+});
+$('btnDelExam').onclick = () => tenter(async () => {
+  if(!courant) return;
+  if(!confirm('Supprimer définitivement l\'examen « ' + courant + ' » et toutes ses questions ? (les copies déjà remises restent dans l\'onglet Copies du Sheet)')) return;
+  await api({action:'admin_delete_exam', examen:courant}); courant = null; await rechargerListe();
+  if(exams.length) await choisir(exams[0].examen); else nouvelExamen(); message('Examen supprimé.', true);
+});
+function nouvelExamen(){
+  courant = null; remplirForm({duree_min:45, max_sorties:3, ouvert:false, nb_questions:0, date:new Date().toLocaleDateString('fr-FR'), enseignant:'M. Sofien MELKI'});
+  $('fId').readOnly = false; $('fId').focus(); qs = []; dessinerQ(); sale = false; majEtatQ();
+  $('resume').textContent = 'Nouvel examen : renseignez l\'identifiant (ex. marketing-m1), puis enregistrez les réglages avant d\'importer des questions.';
+  onglet('reglages');
+}
+$('btnNouveau').onclick = () => confirmerPerte() && nouvelExamen();
+
+// ---------- Onglets ----------
+function onglet(o){
+  document.querySelectorAll('.onglets button').forEach(b => b.classList.toggle('actif', b.dataset.o === o));
+  $('oReglages').classList.toggle('cache', o !== 'reglages'); $('oQuestions').classList.toggle('cache', o !== 'questions'); $('oResultats').classList.toggle('cache', o !== 'resultats'); $('oHistorique').classList.toggle('cache', o !== 'historique');
+  if(o === 'resultats' && courant) tenter(chargerRes);
+  if(o === 'historique') tenter(chargerHist);
+}
+document.querySelectorAll('.onglets button').forEach(b => b.onclick = () => onglet(b.dataset.o));
+
+
+// ---------- Historique ----------
+const LIB_ACTION = {'reglages':'Réglages modifiés','questions-remplacement':'Questions remplacées','questions-ajout':'Questions ajoutées','suppression':'Examen supprimé','avant-restauration':'Avant une restauration'};
+async function chargerHist(){
+  const r = await api({action:'admin_history', examen: ($('histTous').checked || !courant) ? '' : courant});
+  const tb = $('corpsHist'); tb.textContent = '';
+  const v = r.versions.slice().sort((a, b) => (a.matiere || a.examen).localeCompare(b.matiere || b.examen) || (a.date < b.date ? 1 : -1));
+  if(!v.length){ const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 7; td.className = 'muted'; td.textContent = 'Aucune version pour le moment : la première est enregistrée à la prochaine modification.'; tr.appendChild(td); tb.appendChild(tr); return; }
+  v.forEach(x => {
+    const tr = document.createElement('tr');
+    [x.matiere || '-', x.examen, x.date, x.auteur, LIB_ACTION[x.action] || x.action, String(x.nb_questions)].forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+    const td = document.createElement('td'); td.style.whiteSpace = 'nowrap';
+    const bx = document.createElement('button'); bx.type = 'button'; bx.textContent = 'Excel';
+    bx.onclick = () => tenter(async () => { const g = await api({action:'admin_history_get', snap:x.snap});
+      telecharger([['Question','A','B','C','D','Bonne réponse']].concat(g.questions.map(q => [q.question, q.A, q.B, q.C, q.D, q.bonne])), 'QCM_' + x.examen + '_' + x.date.slice(0, 10) + '.xlsx', 'Questions'); });
+    const br = document.createElement('button'); br.type = 'button'; br.textContent = 'Restaurer';
+    br.onclick = () => tenter(async () => {
+      if(!confirm('Restaurer « ' + x.examen + ' » dans l\'état du ' + x.date + ' (' + x.nb_questions + ' questions) ? L\'état actuel sera lui-même conservé dans l\'historique.')) return;
+      const r2 = await api({action:'admin_restore', snap:x.snap}); await rechargerListe(); await choisir(r2.examen); onglet('questions');
+      message('Version restaurée : ' + r2.questions + ' question(s).', true); });
+    td.append(bx, ' ', br); tr.appendChild(td); tb.appendChild(tr);
+  });
+}
+$('btnHist').onclick = () => tenter(chargerHist);
+$('histTous').onchange = () => tenter(chargerHist);
+
+// ---------- Questions : édition ----------
+function valide(q){
+  const L = LETTRES.indexOf(q.bonne);
+  return q.question.trim() !== '' && q.options.filter(t => t.trim() !== '').length >= 2 && L >= 0 && q.options[L].trim() !== '';
+}
+function majEtatQ(){
+  const inv = qs.filter(q => !valide(q)).length;
+  $('compteQ').textContent = '(' + qs.length + ')';
+  $('etatQ').textContent = (sale ? 'Modifications non enregistrées. ' : '') + (inv ? inv + ' question(s) incomplète(s).' : '');
+  $('btnSaveQ').disabled = !sale || !courant;
+}
+function dessinerQ(){
+  const box = $('listeQ'); box.textContent = ''; const f = $('recherche').value.trim().toLowerCase();
+  qs.forEach((q, idx) => {
+    if(f && (q.question + ' ' + q.options.join(' ')).toLowerCase().indexOf(f) < 0) return;
+    const d = document.createElement('div'); d.className = 'q' + (valide(q) ? '' : ' invalide');
+    const t = document.createElement('div'); t.className = 'tete'; const n = document.createElement('span'); n.textContent = 'Question ' + (idx+1);
+    const sup = document.createElement('button'); sup.type = 'button'; sup.className = 'd'; sup.textContent = 'Supprimer';
+    sup.onclick = () => { qs.splice(idx, 1); sale = true; dessinerQ(); majEtatQ(); };
+    t.append(n, sup); d.appendChild(t);
+    const ta = document.createElement('textarea'); ta.value = q.question; ta.setAttribute('aria-label', 'Énoncé');
+    ta.oninput = () => { q.question = ta.value; sale = true; d.className = 'q' + (valide(q) ? '' : ' invalide'); majEtatQ(); }; d.appendChild(ta);
+    LETTRES.forEach((L, k) => {
+      const o = document.createElement('div'); o.className = 'opt'; const b = document.createElement('b'); b.textContent = L;
+      const inp = document.createElement('input'); inp.type = 'text'; inp.value = q.options[k]; inp.setAttribute('aria-label', 'Proposition ' + L);
+      inp.oninput = () => { q.options[k] = inp.value; sale = true; d.className = 'q' + (valide(q) ? '' : ' invalide'); majEtatQ(); };
+      const rd = document.createElement('input'); rd.type = 'radio'; rd.name = 'bonne' + idx; rd.checked = q.bonne === L; rd.title = 'Bonne réponse'; rd.setAttribute('aria-label', 'Bonne réponse : ' + L);
+      rd.onchange = () => { q.bonne = L; sale = true; d.className = 'q' + (valide(q) ? '' : ' invalide'); majEtatQ(); };
+      o.append(b, inp, rd); d.appendChild(o);
+    });
+    const aide = document.createElement('div'); aide.className = 'muted'; aide.textContent = 'Cochez le bouton rond de la bonne réponse. Laissez vide une proposition inutilisée (2 minimum).'; d.appendChild(aide);
+    box.appendChild(d);
+  });
+}
+$('recherche').oninput = dessinerQ;
+$('btnAjoutQ').onclick = () => { qs.push({question:'', options:['','','',''], bonne:''}); sale = true; $('recherche').value = ''; dessinerQ(); majEtatQ();
+  const l = $('listeQ').lastChild; if(l){ l.scrollIntoView({behavior:'smooth', block:'center'}); l.querySelector('textarea').focus(); } };
+$('btnSaveQ').onclick = () => tenter(async () => {
+  const inv = qs.map((q,i) => valide(q) ? 0 : i+1).filter(Boolean);
+  if(inv.length){ message('Corrigez d\'abord les questions incomplètes : n° ' + inv.slice(0,15).join(', ') + (inv.length > 15 ? '...' : ''), false); return; }
+  const r = await api({action:'admin_save_questions', examen:courant, mode:'replace', questions:qs});
+  sale = false; majEtatQ(); await rechargerListe(); await choisir(courant); message(r.total + ' question(s) enregistrée(s).', true);
+});
+window.addEventListener('beforeunload', e => { if(sale){ e.preventDefault(); e.returnValue = ''; } });
+
+// ---------- Import / export Excel ----------
+const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function colonne(h){
+  const n = norm(h);
+  if(['question','enonce','intitule','libelle','questions'].includes(n)) return 'question';
+  if(['a','propositiona','reponsea','choixa','optiona'].includes(n)) return 'A';
+  if(['b','propositionb','reponseb','choixb','optionb'].includes(n)) return 'B';
+  if(['c','propositionc','reponsec','choixc','optionc'].includes(n)) return 'C';
+  if(['d','propositiond','reponsed','choixd','optiond'].includes(n)) return 'D';
+  if(['bonne','bonnereponse','bonnesreponses','reponse','correct','solution','corrige','reponsecorrecte','bonnerep'].includes(n)) return 'bonne';
+  return null;
+}
+function analyser(lignes){
+  const ok = [], erreurs = [];
+  lignes.forEach((r, i) => {
+    const num = i + 2; if(!String(r.question || '').trim() && !LETTRES.some(L => String(r[L] || '').trim())) return;
+    const opts = LETTRES.map(L => String(r[L] == null ? '' : r[L]).trim());
+    let b = String(r.bonne == null ? '' : r.bonne).trim(); let L = '';
+    if(/^[A-Da-d]$/.test(b)) L = b.toUpperCase();
+    else if(/^[1-4]$/.test(b)) L = LETTRES[Number(b) - 1];
+    else if(b){ const k = opts.findIndex(t => t !== '' && t.toLowerCase() === b.toLowerCase()); if(k >= 0) L = LETTRES[k]; }
+    const q = {question:String(r.question || '').trim(), options:opts, bonne:L};
+    if(!q.question) erreurs.push('Ligne ' + num + ' : question vide.');
+    else if(opts.filter(Boolean).length < 2) erreurs.push('Ligne ' + num + ' : moins de 2 propositions.');
+    else if(!L || !opts[LETTRES.indexOf(L)]) erreurs.push('Ligne ' + num + ' : bonne réponse invalide (« ' + b + ' »).');
+    else ok.push(q);
+  });
+  return {ok, erreurs};
+}
+$('fichier').onchange = ev => {
+  const f = ev.target.files[0]; if(!f) return;
+  if(!window.XLSX){ message('La bibliothèque Excel ne s\'est pas chargée. Vérifiez votre connexion et rechargez la page.', false); return; }
+  if(!courant){ message('Enregistrez d\'abord les réglages de l\'examen (onglet Réglages).', false); ev.target.value = ''; return; }
+  const rd = new FileReader();
+  rd.onload = () => { try{
+    const wb = XLSX.read(rd.result, {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+    if(rows.length < 2) throw new Error('Le fichier est vide.');
+    const map = rows[0].map(colonne);
+    if(map.indexOf('question') < 0 || map.indexOf('bonne') < 0 || !['A','B'].every(L => map.indexOf(L) >= 0)) throw new Error('Colonnes non reconnues. Il faut au minimum : Question, A, B, Bonne réponse (utilisez le modèle).');
+    const lignes = rows.slice(1).map(r => { const o = {}; map.forEach((c, k) => { if(c) o[c] = r[k]; }); return o; });
+    montrerApercu(analyser(lignes));
+  }catch(e){ message(e.message, false); } ev.target.value = ''; };
+  rd.readAsArrayBuffer(f);
+};
+function montrerApercu(a){
+  const box = $('apercu'); box.textContent = ''; const mode = document.querySelector('input[name=mode]:checked').value;
+  const t = document.createElement('div'); t.className = 'msg ' + (a.erreurs.length ? 'ko' : 'ok');
+  t.textContent = a.ok.length + ' question(s) valide(s) détectée(s)' + (a.erreurs.length ? ' - ' + a.erreurs.length + ' ligne(s) à corriger :' : '.'); box.appendChild(t);
+  if(a.erreurs.length){ const ul = document.createElement('ul'); a.erreurs.slice(0, 30).forEach(e => { const li = document.createElement('li'); li.textContent = e; ul.appendChild(li); }); box.appendChild(ul); }
+  if(!a.ok.length) return;
+  const w = document.createElement('div'); w.className = 'defile'; w.style.maxHeight = '220px'; const tb = document.createElement('table');
+  const hd = document.createElement('tr'); ['#','Question','A','B','C','D','Bonne'].forEach(h => { const th = document.createElement('th'); th.textContent = h; hd.appendChild(th); }); tb.appendChild(hd);
+  a.ok.slice(0, 50).forEach((q, i) => { const tr = document.createElement('tr'); [i+1, q.question, ...q.options, q.bonne].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }); tb.appendChild(tr); });
+  w.appendChild(tb); box.appendChild(w);
+  const bar = document.createElement('div'); bar.className = 'ligne';
+  const go = document.createElement('button'); go.type = 'button'; go.className = 'p';
+  go.textContent = (mode === 'replace' ? 'Remplacer les questions par ces ' : 'Ajouter ces ') + a.ok.length + ' question(s)' + (a.erreurs.length ? ' (en ignorant les lignes en erreur)' : '');
+  go.onclick = () => tenter(async () => {
+    if(mode === 'replace' && qs.length && !confirm('Les ' + qs.length + ' questions actuelles seront remplacées. Continuer ?')) return;
+    go.disabled = true; const r = await api({action:'admin_save_questions', examen:courant, mode:mode, questions:a.ok});
+    box.textContent = ''; await rechargerListe(); await choisir(courant); message('Import terminé : ' + r.ajoutees + ' question(s) importée(s), ' + r.total + ' au total.', true); });
+  const an = document.createElement('button'); an.type = 'button'; an.textContent = 'Annuler'; an.onclick = () => { box.textContent = ''; };
+  bar.append(go, an); box.appendChild(bar);
+}
+function telecharger(aoa, nom, feuille){
+  if(!window.XLSX){ message('La bibliothèque Excel ne s\'est pas chargée.', false); return; }
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = aoa[0].map((_, i) => ({wch: i === 0 ? 60 : 24}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, feuille); XLSX.writeFile(wb, nom);
+}
+$('btnModele').onclick = () => telecharger([
+  ['Question','A','B','C','D','Bonne réponse'],
+  ['Quelle commande Linux liste les fichiers d\'un dossier ?','cd','pwd','rm','ls','D'],
+  ['Quelle commande rend un script exécutable ?','chmod +x','chown +x','exec','sudo -x','A'],
+  ['Quel outil sert à gérer les versions d\'un projet ?','Excel','Paint','Git','Word','C']], 'modele_QCM.xlsx', 'QCM');
+$('btnExport').onclick = () => { if(!qs.length){ message('Aucune question à exporter.', false); return; }
+  telecharger([['Question','A','B','C','D','Bonne réponse']].concat(qs.map(q => [q.question, ...q.options, q.bonne])), 'QCM_' + courant + '.xlsx', 'QCM'); };
+
+// ---------- Résultats ----------
+async function chargerRes(){
+  const r = await api({action:'admin_results', examen:courant}); copies = r.copies;
+  const tb = $('corpsRes'); tb.textContent = '';
+  const finies = copies.filter(c => c.statut === 'termine'); const notes = finies.map(c => c.note).filter(n => n !== null);
+  const moy = notes.length ? (notes.reduce((a, b) => a + b, 0) / notes.length).toFixed(2) : '-';
+  $('statsRes').textContent = copies.length + ' copie(s) : ' + finies.length + ' remise(s), ' + (copies.length - finies.length) + ' en cours. Moyenne : ' + moy + ' / 20.';
+  copies.forEach(c => { const tr = document.createElement('tr');
+    [c.nom, c.prenom, c.cin, c.email, c.statut, c.score === null ? '' : c.score + '/' + c.total, c.note === null ? '' : c.note, c.sorties, c.copies, c.motif, c.soumis_le].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    const td = document.createElement('td'); const b = document.createElement('button'); b.type = 'button'; b.className = 'd'; b.textContent = 'Réinitialiser';
+    b.onclick = () => tenter(async () => { if(!confirm('Supprimer la copie de ' + c.prenom + ' ' + c.nom + ' ? Il pourra recommencer.')) return; await api({action:'admin_delete_copy', session:c.session}); await chargerRes(); message('Copie supprimée.', true); });
+    td.appendChild(b); tr.appendChild(td); tb.appendChild(tr); });
+}
+$('btnRaffraichir').onclick = () => tenter(chargerRes);
+$('btnExportRes').onclick = () => { if(!copies.length){ message('Aucun résultat à exporter.', false); return; }
+  telecharger([['Nom','Prénom','CIN','Email','Statut','Score','Total','Note /20','Sorties','Copier-coller','Motif','Remise']].concat(copies.map(c => [c.nom, c.prenom, c.cin, c.email, c.statut, c.score, c.total, c.note, c.sorties, c.copies, c.motif, c.soumis_le])), 'Resultats_' + courant + '.xlsx', 'Résultats'); };
+
+initGoogle(0);
+})();
+</script>
+</body>
+</html>
