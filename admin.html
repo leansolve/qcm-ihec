@@ -7,13 +7,9 @@
 <script>
 // ===================== RÉGLAGES =====================
 const CLIENT_ID = '848023216896-75ihlcrd96mstsctp7anv80ucm2ulqem.apps.googleusercontent.com';
-const API_URL   = 'https://script.google.com/macros/s/AKfycbzdMa1lVCdRYKNcTnUu6ML5BGi1SwDHDws7D6nK5IWXgDOe7o9WLNUh1OTI172ofuAj/exec';   // même URL /exec que dans les pages index
-// Liens affichés pour chaque examen (facultatif) : identifiant de l'examen -> adresse de la page étudiants
-const LIENS = {
-  'linux-2bi': 'https://leansolve.github.io/qcm-outils-dev-linux-2bi/',
-  'secu-3bi':  'https://leansolve.github.io/qcm-3bi-securite/',
-  'gestion-projet': 'https://leansolve.github.io/qcm-gestion-projet/'
-};
+const API_URL   = 'https://script.google.com/macros/s/AKfycbyb9NxssT5zgkhhelwFF6olSeq7LpnKuGiu3t3wC2NjHxV5Ergpws65oxiMmxA6g9r-/exec';   // même URL /exec que dans les pages index
+// Adresse de la page étudiants (dépôt GitHub unique pour toutes les matières). Le lien d'un examen = cette adresse + ?examen=identifiant
+const URL_ETUDIANTS = 'https://leansolve.github.io/qcm-ihec/';
 // =====================================================
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -89,6 +85,7 @@ th{background:#EAF0F6;position:sticky;top:0}
         <button type="button" data-o="reglages" class="actif">Réglages</button>
         <button type="button" data-o="questions">Questions (QCM)</button>
         <button type="button" data-o="resultats">Résultats</button>
+        <button type="button" data-o="historique">Historique</button>
       </div>
     </div>
     <div id="msg"></div>
@@ -152,6 +149,13 @@ th{background:#EAF0F6;position:sticky;top:0}
       <div class="defile"><table><thead><tr><th>Nom</th><th>Prénom</th><th>CIN</th><th>Email</th><th>Statut</th><th>Score</th><th>Note /20</th><th>Sorties</th><th>Copier-coller</th><th>Motif</th><th>Remise</th><th></th></tr></thead><tbody id="corpsRes"></tbody></table></div>
       <p class="muted">« Réinitialiser » supprime la copie d'un étudiant (par exemple après un incident technique) pour qu'il puisse recommencer.</p>
     </div>
+    <!-- Historique -->
+    <div id="oHistorique" class="cache carte">
+      <div class="ligne" style="justify-content:space-between"><h2 style="margin:0">Historique des examens</h2>
+        <div class="ligne" style="margin:0"><label style="margin:0"><input type="checkbox" id="histTous" checked> Toutes les matières</label><button type="button" id="btnHist">Actualiser</button></div></div>
+      <p class="muted">Avant chaque modification, import ou suppression, l'état de l'examen (réglages et questions) est conservé ici. Vous pouvez le télécharger en Excel ou le restaurer. Les copies des étudiants ne sont jamais effacées par une restauration.</p>
+      <div class="defile"><table><thead><tr><th>Matière</th><th>Examen</th><th>Date</th><th>Auteur</th><th>Événement</th><th>Questions</th><th></th></tr></thead><tbody id="corpsHist"></tbody></table></div>
+    </div>
   </section>
 </main>
 
@@ -208,7 +212,7 @@ async function choisir(id){
   qs = r.questions.map(q => ({question:q.question, options:q.options.slice(), bonne:q.bonne})); sale = false; dessinerQ(); majEtatQ();
   const e = exams.find(x => x.examen === id) || {};
   $('resume').textContent = (e.nb_valides !== undefined ? e.nb_valides + ' question(s) valide(s) sur ' + e.nb_total + ' - ' : '') + (e.nb_termines || 0) + ' copie(s) remise(s) sur ' + (e.nb_copies || 0) + ' commencée(s)';
-  $('lienEtudiants').textContent = ''; if(LIENS[id]){ const a = document.createElement('a'); a.href = LIENS[id]; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Ouvrir la page étudiants'; $('lienEtudiants').appendChild(a); }
+  $('lienEtudiants').textContent = ''; if(URL_ETUDIANTS){ const a = document.createElement('a'); a.href = URL_ETUDIANTS + '?examen=' + encodeURIComponent(id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Ouvrir la page étudiants'; $('lienEtudiants').appendChild(a); }
   $('fId').readOnly = true; copies = []; $('corpsRes').textContent = ''; $('statsRes').textContent = '';
 }
 async function rechargerListe(){ const r = await api({action:'admin_info'}); exams = r.examens; remplirSelect(courant); }
@@ -225,7 +229,9 @@ function lireForm(){
     code:$('fCode').value.trim(), max_sorties:Number($('fSorties').value), ouvert:$('fOuvert').checked, afficher_note:$('fNote').checked};
 }
 $('btnSaveExam').onclick = () => tenter(async () => {
-  const e = lireForm(); const r = await api({action:'admin_save_exam', examen:e});
+  const e = lireForm();
+  if(!courant && exams.some(x => x.examen === e.examen)){ message('Cet identifiant existe déjà : choisissez-en un autre pour ne pas écraser l\'examen existant.', false); return; }
+  const r = await api({action:'admin_save_exam', examen:e, creation:!courant});
   await rechargerListe(); if(r.cree){ await choisir(e.examen); }
   message('Réglages enregistrés.', true);
 });
@@ -246,10 +252,37 @@ $('btnNouveau').onclick = () => confirmerPerte() && nouvelExamen();
 // ---------- Onglets ----------
 function onglet(o){
   document.querySelectorAll('.onglets button').forEach(b => b.classList.toggle('actif', b.dataset.o === o));
-  $('oReglages').classList.toggle('cache', o !== 'reglages'); $('oQuestions').classList.toggle('cache', o !== 'questions'); $('oResultats').classList.toggle('cache', o !== 'resultats');
+  $('oReglages').classList.toggle('cache', o !== 'reglages'); $('oQuestions').classList.toggle('cache', o !== 'questions'); $('oResultats').classList.toggle('cache', o !== 'resultats'); $('oHistorique').classList.toggle('cache', o !== 'historique');
   if(o === 'resultats' && courant) tenter(chargerRes);
+  if(o === 'historique') tenter(chargerHist);
 }
 document.querySelectorAll('.onglets button').forEach(b => b.onclick = () => onglet(b.dataset.o));
+
+
+// ---------- Historique ----------
+const LIB_ACTION = {'reglages':'Réglages modifiés','questions-remplacement':'Questions remplacées','questions-ajout':'Questions ajoutées','suppression':'Examen supprimé','avant-restauration':'Avant une restauration'};
+async function chargerHist(){
+  const r = await api({action:'admin_history', examen: ($('histTous').checked || !courant) ? '' : courant});
+  const tb = $('corpsHist'); tb.textContent = '';
+  const v = r.versions.slice().sort((a, b) => (a.matiere || a.examen).localeCompare(b.matiere || b.examen) || (a.date < b.date ? 1 : -1));
+  if(!v.length){ const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 7; td.className = 'muted'; td.textContent = 'Aucune version pour le moment : la première est enregistrée à la prochaine modification.'; tr.appendChild(td); tb.appendChild(tr); return; }
+  v.forEach(x => {
+    const tr = document.createElement('tr');
+    [x.matiere || '-', x.examen, x.date, x.auteur, LIB_ACTION[x.action] || x.action, String(x.nb_questions)].forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+    const td = document.createElement('td'); td.style.whiteSpace = 'nowrap';
+    const bx = document.createElement('button'); bx.type = 'button'; bx.textContent = 'Excel';
+    bx.onclick = () => tenter(async () => { const g = await api({action:'admin_history_get', snap:x.snap});
+      telecharger([['Question','A','B','C','D','Bonne réponse']].concat(g.questions.map(q => [q.question, q.A, q.B, q.C, q.D, q.bonne])), 'QCM_' + x.examen + '_' + x.date.slice(0, 10) + '.xlsx', 'Questions'); });
+    const br = document.createElement('button'); br.type = 'button'; br.textContent = 'Restaurer';
+    br.onclick = () => tenter(async () => {
+      if(!confirm('Restaurer « ' + x.examen + ' » dans l\'état du ' + x.date + ' (' + x.nb_questions + ' questions) ? L\'état actuel sera lui-même conservé dans l\'historique.')) return;
+      const r2 = await api({action:'admin_restore', snap:x.snap}); await rechargerListe(); await choisir(r2.examen); onglet('questions');
+      message('Version restaurée : ' + r2.questions + ' question(s).', true); });
+    td.append(bx, ' ', br); tr.appendChild(td); tb.appendChild(tr);
+  });
+}
+$('btnHist').onclick = () => tenter(chargerHist);
+$('histTous').onchange = () => tenter(chargerHist);
 
 // ---------- Questions : édition ----------
 function valide(q){
